@@ -1,1 +1,57 @@
+name: CI/CD Pipeline - Build, Push & Update Deployment Tag
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: yemmy-node-project
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to commit tag changes
+      packages: write
+
+    steps:
+      # Step 1: Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Log in to GitHub Container Registry
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 3: Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.run_id }} .
+          docker tag ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.run_id }} ${{ env.REGISTRY }}/${{ github.repository }}:latest
+
+      # Step 4: Push Docker image
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.run_id }}
+          docker push ${{ env.REGISTRY }}/${{ github.repository }}:latest
+
+      # Step 5: Update deployment manifest with new tag
+      - name: Update deployment image tag
+        run: |
+          echo "Updating deployment manifest with tag: ${{ github.run_id }}"
+          sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.run_id }}|g" deployment.yaml
+
+      # Step 6: Commit and push updated deployment manifest
+      - name: Commit updated deployment manifest
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add deployment.yaml
+          git commit -m "Updated image tag to ${{ github.run_id }}"
+          git push
 
