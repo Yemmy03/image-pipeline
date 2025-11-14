@@ -1,60 +1,70 @@
-name: CI/CD Pipeline - Build, Push & Update Deployment Tag
+name: CI/CD Pipeline - Node App to AWS ECS
 
 on:
   push:
     branches: [ "main" ]
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: yemmy-node-project
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: yemmy-node-project
+  ECS_CLUSTER: my-ecs-cluster
+  ECS_SERVICE: yemmy-node-service
 
 jobs:
-  build-and-push:
+  deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      packages: write
+      id-token: write
+      contents: read
 
     steps:
-      # Step 1: Checkout repository
+      # Step 1: Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Log in to GitHub Container Registry
-      # This allows the temporary token to write repo contents and push packages, hence, no need for PAT or credentials
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      # Step 2: Configure AWS credentials (OIDC)
+      # ODIC is an auth standard allowing github prove its access to AWS without using PAT
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          role-to-assume: arn:aws:iam::930758456167:role/<arn:aws:iam::930758456167:role/GitHubActionsECSRole
+          aws-region: ${{ env.AWS_REGION }}
 
-      # Step 3: Build Docker image
-      - name: Build Docker image
+      # Step 3: Log in to Amazon ECR
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Step 4: Build, tag, and push Docker image
+      - name: Build and push Docker image to ECR
+        id: build-image
         run: |
-          docker build -t ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.run_id }} .
-          docker tag ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.run_id }} ${{ env.REGISTRY }}/${{ github.repository }}:latest
+          IMAGE_TAG=${{ github.run_id }}
+          IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
 
-      # Step 4: Push Docker image
-      - name: Push Docker image
-        run: |
-          docker push ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.run_id }}
-          docker push ${{ env.REGISTRY }}/${{ github.repository }}:latest
+          echo "Building Docker image..."
+          docker build -t $IMAGE_URI .
 
-      # Step 5: Update deployment manifest with new tag
-      # This replaces the image line in deployment.yaml with the new image tag for this CI run
-      - name: Update deployment image tag
-        run: |
-          echo "Updating deployment manifest with tag: ${{ github.run_id }}"
-          sed -i "s|image: .*|image: ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.run_id }}|g" deployment.yaml
+          echo "Pushing image to ECR..."
+          docker push $IMAGE_URI
 
-      # Step 6: Commit and push updated deployment manifest
-      # This configures GitHub Actions bot identity and commit the updated deployment.yaml back to the repo
-      - name: Commit updated deployment manifest
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add deployment.yaml
-          git commit -m "Updated image tag to ${{ github.run_id }}"
-          git push
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
+      # Step 5: Update ECS task definition with new image
+      # This is needed because only a placeholder image was created during setting up ECS task definition
+      - name: Update ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ecs-task-def.json
+          container-name: yemmy-node-container
+          image: ${{ env.IMAGE_URI }}
+
+      # Step 6: Deploy new task definition to ECS
+      - name: Deploy to Amazon ECS service
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
