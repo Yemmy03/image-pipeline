@@ -8,7 +8,7 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: yemmy-node-project
-  ECS_CLUSTER: my-ecs-cluster
+  ECS_CLUSTER: my-ecs-cluster-ec2
   ECS_SERVICE: yemmy-node-service-yozby9zf
 
 jobs:
