@@ -1,0 +1,43 @@
+{
+  "family": "yemmy-node-task",
+  "networkMode": "bridge",
+  "executionRoleArn": "arn:aws:iam::930758456167:role/ecsTaskExecutionRole",
+  "cpu": "1024",
+  "memory": "3072",
+  "requiresCompatibilities": ["EC2"],
+  "containerDefinitions": [
+    {
+      "name": "yemmy-node-container",
+      "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/yemmy-node-project:latest",
+      "cpu": 256,
+      "memory": 1024,
+      "memoryReservation": 512,
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "hostPort": 80,
+          "protocol": "tcp",
+          "appProtocol": "http",
+          "name": "yemmy-node-container-80-tcp"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/yemmy-node-task",
+          "awslogs-create-group": "true",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "environment": [],
+      "mountPoints": [],
+      "systemControls": [],
+      "volumesFrom": []
+    }
+  ],
+  "placementConstraints": [],
+  "volumes": [],
+  "tags": []
+}
